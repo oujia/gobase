@@ -3,6 +3,7 @@ package gobase
 import (
 	"github.com/jmoiron/sqlx"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql"
 )
 
 type TableHelper struct {
@@ -11,9 +12,12 @@ type TableHelper struct {
 	*sqlx.DB
 }
 
-func (th *TableHelper) GetAll(list interface{}, count int) error {
-	sql := fmt.Sprintf("select * from %s limit %d", th.TableName, count)
-
+func (th *TableHelper) GetAll(list interface{}, field string, count int) error {
+	if field == "" {
+		field = "*"
+	}
+	sql := fmt.Sprintf("select %s from %s limit %d", field, th.TableName, count)
+	fmt.Println(sql)
 	return th.DB.Select(list, sql)
 }
 
