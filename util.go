@@ -73,6 +73,6 @@ func NewDbClient(dbName string, info map[string]DbInfo) (*sqlx.DB, error) {
 		dataSource = fmt.Sprintf("%s@(%s:%d)/%s?charset=utf8&parseTime=true", dbInfo.User, dbInfo.Host, dbInfo.Port, dbInfo.Name)
 	}
 
-	fmt.Println(dataSource)
+	//fmt.Println(dataSource)
 	return sqlx.Connect("mysql", dataSource)
 }
