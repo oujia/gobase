@@ -36,6 +36,24 @@ func (th *TableHelper) GetRow(item interface{}, where, keyword map[string]interf
 	return th.DB.Get(item, sql)
 }
 
+func (th *TableHelper) GetOne(result interface{}, where, keyword map[string]interface{}) error {
+	keyword["_limit"] = 1
+
+	sql, err := th.buildSql(where, keyword)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(sql)
+	row := th.DB.QueryRow(sql)
+	err = row.Scan(result)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (th *TableHelper) buildSql(where, keyword map[string]interface{}) (string, error) {
 	field := "*"
 	if _field, ok := keyword["_field"]; ok {
