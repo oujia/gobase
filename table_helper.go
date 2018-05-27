@@ -6,6 +6,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"reflect"
 	"errors"
+	"strings"
 )
 
 type TableHelper struct {
@@ -53,12 +54,72 @@ func (th *TableHelper) GetCol(result interface{}, where, keyword map[string]inte
 	return th.GetAll(result, where, keyword)
 }
 
-func (th *TableHelper) GetFoundRows() (total int) {
+func (th *TableHelper) GetFoundRows() (total int64) {
 	sql := "SELECT FOUND_ROWS()"
 	row := th.DB.QueryRow(sql)
 	row.Scan(&total)
 
 	return
+}
+
+func (th *TableHelper) GetCount(where, keyword map[string]interface{}) (int64, error) {
+	var total int64
+	if keyword == nil {
+		keyword = make(map[string]interface{})
+	}
+
+	keyword["_field"] = "count(*)"
+	delete(keyword, "_sort")
+	delete(keyword, "_foundRows")
+	err := th.GetOne(&total, where, keyword)
+	if err != nil {
+		return 0, err
+	}
+
+	return total, nil
+}
+
+func (th *TableHelper) UpdateObject(data, where map[string]interface{}) (int64, error) {
+	if where == nil {
+		return 0, errors.New("miss where")
+	}
+
+	_where, err := buildWhere(where, "and")
+	if err != nil {
+		return 0, err
+	}
+	_data, err := buildWhere(data, ",")
+	if err != nil {
+		return 0, err
+	}
+	sql := fmt.Sprintf("update %s set %s where %s", th.TableName, _data, _where)
+	fmt.Println(sql)
+	rs, err := th.DB.Exec(sql)
+	if err != nil {
+		return 0, err
+	}
+
+	return rs.RowsAffected()
+}
+
+func (th *TableHelper) DelObject(where map[string]interface{}) (int64, error) {
+	if where == nil {
+		return 0, errors.New("miss where")
+	}
+
+	_where, err := buildWhere(where, "and")
+	if err != nil {
+		return 0, err
+	}
+
+	sql := fmt.Sprintf("delete from %s where %s", th.TableName, _where)
+	fmt.Println(sql)
+	rs, err := th.DB.Exec(sql)
+	if err != nil {
+		return 0, err
+	}
+
+	return rs.RowsAffected()
 }
 
 func (th *TableHelper) buildSql(where, keyword map[string]interface{}) (string, error) {
@@ -71,39 +132,15 @@ func (th *TableHelper) buildSql(where, keyword map[string]interface{}) (string, 
 		field = "SQL_CALC_FOUND_ROWS " + field
 	}
 
-	sql := fmt.Sprintf("select %s from %s where 1=1", field, th.TableName)
-	for k, v := range where {
-		r := reflect.ValueOf(v)
-
-		switch r.Kind() {
-		case reflect.Int:
-			sql += fmt.Sprintf(" and %s=%d", k, v)
-		case reflect.String:
-			sql += fmt.Sprintf(" and %s='%s'", k, v)
-		case reflect.Float32:
-			fallthrough
-		case reflect.Float64:
-			sql += fmt.Sprintf(" and %s=%f", k, v)
-		case reflect.Array:
-			fallthrough
-		case reflect.Slice:
-			sql += fmt.Sprintf(" and %s in (", k)
-
-			for i := 0; i < r.Len() ; i++ {
-				if i != 0 {
-					sql += ", "
-				}
-				if r.Index(i).Kind() == reflect.String {
-					sql += fmt.Sprintf("'%s'", r.Index(i))
-				} else if r.Index(i).Kind() == reflect.Int {
-					sql += fmt.Sprintf("%d", r.Index(i))
-				} else {
-					return "", errors.New(fmt.Sprintf("sql params[key=%s] error", k))
-				}
-			}
-
-			sql += ")"
+	sql := fmt.Sprintf("select %s from %s where ", field, th.TableName)
+	if where != nil {
+		_where, err := buildWhere(where, "and")
+		if err != nil {
+			return "", err
 		}
+		sql += _where
+	} else {
+		sql += " 1"
 	}
 
 	if _where, ok := keyword["_where"]; ok {
@@ -127,5 +164,49 @@ func (th *TableHelper) buildSql(where, keyword map[string]interface{}) (string, 
 	}
 
 	return sql, nil
+}
+
+func buildWhere(where map[string]interface{}, sep string) (string, error) {
+	sqlSlice := make([]string, 0)
+
+	for k, v := range where {
+		r := reflect.ValueOf(v)
+
+		switch r.Kind() {
+		case reflect.Int:
+			sqlSlice = append(sqlSlice, fmt.Sprintf("%s=%d",k, v))
+		case reflect.String:
+			sqlSlice = append(sqlSlice, fmt.Sprintf("%s='%s'", k, v))
+		case reflect.Float32:
+			fallthrough
+		case reflect.Float64:
+			sqlSlice = append(sqlSlice, fmt.Sprintf("%s=%f", k, v))
+		case reflect.Array:
+			fallthrough
+		case reflect.Slice:
+			inSql := fmt.Sprintf("%s in (", k)
+
+			for i := 0; i < r.Len() ; i++ {
+				if i != 0 {
+					inSql += ", "
+				}
+				if r.Index(i).Kind() == reflect.String {
+					inSql += fmt.Sprintf("'%s'", r.Index(i))
+				} else if r.Index(i).Kind() == reflect.Int {
+					inSql += fmt.Sprintf("%d", r.Index(i))
+				} else {
+					return "", errors.New(fmt.Sprintf("sql params[key=%s] error", k))
+				}
+			}
+
+			inSql += ")"
+			sqlSlice = append(sqlSlice, inSql)
+
+		default:
+			return "", errors.New(fmt.Sprintf("sql params[key=%s] error", k))
+		}
+	}
+
+	return strings.Join(sqlSlice, fmt.Sprintf(" %s ", sep)), nil
 }
 
