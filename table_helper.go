@@ -14,6 +14,9 @@ type TableHelper struct {
 	*sqlx.DB
 }
 
+// 读取数据
+// keyword 查询关键字, ['_field', '_where', '_limit', '_sort', '_groupby']
+// list type pointer to data struct slice
 func (th *TableHelper) GetAll(list interface{}, where, keyword map[string]interface{}) error {
 	sql, err := th.buildSql(where, keyword)
 	if err != nil {
@@ -25,7 +28,9 @@ func (th *TableHelper) GetAll(list interface{}, where, keyword map[string]interf
 }
 
 func (th *TableHelper) GetRow(item interface{}, where, keyword map[string]interface{}) error {
-	keyword["_limit"] = 1
+	if keyword != nil {
+		keyword["_limit"] = 1
+	}
 
 	sql, err := th.buildSql(where, keyword)
 	if err != nil {
@@ -36,22 +41,24 @@ func (th *TableHelper) GetRow(item interface{}, where, keyword map[string]interf
 	return th.DB.Get(item, sql)
 }
 
+// 返回SQL语句执行结果集中的第一行第一列数据
+// result type base
 func (th *TableHelper) GetOne(result interface{}, where, keyword map[string]interface{}) error {
-	keyword["_limit"] = 1
+	return th.GetRow(result, where, keyword)
+}
 
-	sql, err := th.buildSql(where, keyword)
-	if err != nil {
-		return err
-	}
+// 返回SQL语句执行结果集中的第一列数据
+// result type pointer to slice
+func (th *TableHelper) GetCol(result interface{}, where, keyword map[string]interface{}) error {
+	return th.GetAll(result, where, keyword)
+}
 
-	fmt.Println(sql)
+func (th *TableHelper) GetFoundRows() (total int) {
+	sql := "SELECT FOUND_ROWS()"
 	row := th.DB.QueryRow(sql)
-	err = row.Scan(result)
-	if err != nil {
-		return err
-	}
+	row.Scan(&total)
 
-	return nil
+	return
 }
 
 func (th *TableHelper) buildSql(where, keyword map[string]interface{}) (string, error) {
@@ -121,3 +128,4 @@ func (th *TableHelper) buildSql(where, keyword map[string]interface{}) (string, 
 
 	return sql, nil
 }
+
