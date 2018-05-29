@@ -122,6 +122,89 @@ func (th *TableHelper) DelObject(where map[string]interface{}) (int64, error) {
 	return rs.RowsAffected()
 }
 
+func (th *TableHelper) AddObject(obj interface{}) (int64, error) {
+	sql := fmt.Sprintf("insert into %s (", th.TableName)
+	column, err := getColumnName(obj)
+	if err != nil {
+		return 0, err
+	}
+	sql += column + ") values "
+	values, err := getColumnValue(obj)
+	if err != nil {
+		return 0, err
+	}
+
+	sql += values
+	fmt.Println(sql)
+
+	rs, err := th.DB.Exec(sql)
+	if err != nil {
+		return 0, err
+	}
+
+	return rs.LastInsertId()
+}
+
+func (th *TableHelper) AddObjects(data []map[string]interface{}) (int64, error) {
+
+	return 0, nil
+}
+
+func getColumnName(obj interface{}) (string, error) {
+	r := reflect.ValueOf(obj)
+	if r.Kind() != reflect.Struct {
+		return "", errors.New("add object must be struct")
+	}
+
+	t := r.Type()
+	column := make([]string, 0)
+	for i := 0; i < r.NumField(); i++ {
+		dbTag := t.Field(i).Tag.Get("db")
+		// 忽略自增零值
+		if strings.Contains(dbTag, "ai") && IsZero(r.Field(i)) {
+			continue
+		}
+
+		column = append(column, strings.Split(dbTag, ",")[0])
+	}
+
+	return strings.Join(column, ", "), nil
+}
+
+func getColumnValue(obj interface{}) (string, error) {
+	r := reflect.ValueOf(obj)
+	if r.Kind() != reflect.Struct {
+		return "", errors.New("add object must be struct")
+	}
+
+	t := r.Type()
+	column := make([]string, 0)
+	for i := 0; i < r.NumField(); i++ {
+		dbTag := t.Field(i).Tag.Get("db")
+		// 忽略自增零值
+		if strings.Contains(dbTag, "ai") && IsZero(r.Field(i)) {
+			continue
+		}
+
+		switch r.Field(i).Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16,
+			reflect.Int32, reflect.Int64, reflect.Uint,
+			reflect.Uint8, reflect.Uint16, reflect.Uint32,
+			reflect.Uint64, reflect.Uintptr:
+			column = append(column, fmt.Sprintf("%d", r.Field(i)))
+		case reflect.String:
+			column = append(column, fmt.Sprintf("'%s'", r.Field(i)))
+		case reflect.Float32, reflect.Float64:
+			column = append(column, fmt.Sprintf("%f", r.Field(i)))
+
+		default:
+			return "", errors.New(fmt.Sprintf("sql params[column=%s] error", dbTag))
+		}
+	}
+
+	return "(" + strings.Join(column, ", ") + ")", nil
+}
+
 func (th *TableHelper) buildSql(where, keyword map[string]interface{}) (string, error) {
 	field := "*"
 	if _field, ok := keyword["_field"]; ok {
@@ -173,28 +256,33 @@ func buildWhere(where map[string]interface{}, sep string) (string, error) {
 		r := reflect.ValueOf(v)
 
 		switch r.Kind() {
-		case reflect.Int:
+		case reflect.Int, reflect.Int8, reflect.Int16,
+			reflect.Int32, reflect.Int64, reflect.Uint,
+			reflect.Uint8, reflect.Uint16, reflect.Uint32,
+			reflect.Uint64, reflect.Uintptr:
 			sqlSlice = append(sqlSlice, fmt.Sprintf("%s=%d",k, v))
 		case reflect.String:
 			sqlSlice = append(sqlSlice, fmt.Sprintf("%s='%s'", k, v))
-		case reflect.Float32:
-			fallthrough
-		case reflect.Float64:
+		case reflect.Float32, reflect.Float64:
 			sqlSlice = append(sqlSlice, fmt.Sprintf("%s=%f", k, v))
-		case reflect.Array:
-			fallthrough
-		case reflect.Slice:
+		case reflect.Array, reflect.Slice:
 			inSql := fmt.Sprintf("%s in (", k)
 
 			for i := 0; i < r.Len() ; i++ {
 				if i != 0 {
 					inSql += ", "
 				}
-				if r.Index(i).Kind() == reflect.String {
-					inSql += fmt.Sprintf("'%s'", r.Index(i))
-				} else if r.Index(i).Kind() == reflect.Int {
+				switch r.Index(i).Kind() {
+				case reflect.Int, reflect.Int8, reflect.Int16,
+					reflect.Int32, reflect.Int64, reflect.Uint,
+					reflect.Uint8, reflect.Uint16, reflect.Uint32,
+					reflect.Uint64, reflect.Uintptr:
 					inSql += fmt.Sprintf("%d", r.Index(i))
-				} else {
+				case reflect.String:
+					inSql += fmt.Sprintf("'%s'", r.Index(i))
+				case reflect.Float32, reflect.Float64:
+					inSql += fmt.Sprintf("%f", r.Index(i))
+				default:
 					return "", errors.New(fmt.Sprintf("sql params[key=%s] error", k))
 				}
 			}
