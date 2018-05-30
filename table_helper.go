@@ -15,6 +15,11 @@ type TableHelper struct {
 	*sqlx.DB
 }
 
+type helperResult struct {
+	affected int64
+	err error
+}
+
 const chunkSize = 1000
 
 // 读取数据
@@ -168,9 +173,9 @@ func (th *TableHelper) AddObjectNx(obj interface{}) (int64, error) {
 	return th._addObject(obj, "addNx");
 }
 
-func (th *TableHelper) _addObjects(objs []interface{}, act string) (int64, error)  {
+func (th *TableHelper) _addObjects(objs []interface{}, act string, ch chan helperResult) {
 	if len(objs) <= 0 {
-		return 0, nil
+		ch <- helperResult{0, errors.New("")}
 	}
 
 	sql := ""
@@ -185,7 +190,7 @@ func (th *TableHelper) _addObjects(objs []interface{}, act string) (int64, error
 	sql += th.TableName + " ("
 	column, err := getColumnName(objs[0])
 	if err != nil {
-		return 0, err
+		ch <- helperResult{0, err}
 	}
 	sql += column + ") values "
 
@@ -195,7 +200,7 @@ func (th *TableHelper) _addObjects(objs []interface{}, act string) (int64, error
 		}
 		values, err := getColumnValue(objs[i])
 		if err != nil {
-			return 0, err
+			ch <- helperResult{0, err}
 		}
 
 		sql += values
@@ -204,10 +209,11 @@ func (th *TableHelper) _addObjects(objs []interface{}, act string) (int64, error
 
 	rs, err := th.DB.Exec(sql)
 	if err != nil {
-		return 0, err
+		ch <- helperResult{0, err}
 	}
 
-	return rs.RowsAffected()
+	af, err := rs.RowsAffected()
+	ch <- helperResult{af, err}
 }
 
 func (th *TableHelper) _addObjectsWapper(objs interface{}, act string) (int64, error) {
@@ -228,24 +234,40 @@ func (th *TableHelper) _addObjectsWapper(objs interface{}, act string) (int64, e
 			end = r.Len()
 		}
 
-		_tmp := make([]interface{}, 0)
+		_tmp := make([]interface{}, end-i)
+		idx := 0
 		for k := i; k < end; k++ {
-			_tmp = append(_tmp, r.Index(k).Interface())
+			_tmp[idx] = r.Index(k).Interface()
+			idx++
 		}
 
 		datas = append(datas, _tmp)
 	}
 
 	var total int64
+	errs := make([]string, 0)
+	ch := make(chan helperResult)
+	defer close(ch)
 	for i := 0; i < len(datas); i++ {
-		ra, err := th._addObjects(datas[i], act)
-		if err != nil {
-			return total, err
-		}
-		total += ra
+		go th._addObjects(datas[i], act, ch) //不保证插入顺序
 	}
 
-	return total, nil
+	for i := 0; i < len(datas); i++ {
+		hr := <-ch
+		total += hr.affected
+		if hr.err != nil {
+			errs = append(errs, hr.err.Error())
+		}
+	}
+
+	var e error
+	if len(errs) > 0 {
+		e = errors.New(strings.Join(errs, "; "))
+	} else {
+		e = nil
+	}
+
+	return total, e
 }
 
 func (th *TableHelper) AddObjects(objs interface{}) (int64, error) {
