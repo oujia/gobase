@@ -15,6 +15,8 @@ type TableHelper struct {
 	*sqlx.DB
 }
 
+const chunkSize = 1000
+
 // 读取数据
 // keyword 查询关键字, ['_field', '_where', '_limit', '_sort', '_groupby']
 // list type pointer to data struct slice
@@ -122,8 +124,17 @@ func (th *TableHelper) DelObject(where map[string]interface{}) (int64, error) {
 	return rs.RowsAffected()
 }
 
-func (th *TableHelper) AddObject(obj interface{}) (int64, error) {
-	sql := fmt.Sprintf("insert into %s (", th.TableName)
+func (th *TableHelper) _addObject(obj interface{}, act string) (int64, error) {
+	sql := ""
+	if act == "replace" {
+		sql += "replace into "
+	} else if act == "addNx" {
+		sql += "insert ignore into "
+	} else {
+		sql += "insert into "
+	}
+
+	sql += th.TableName + " ("
 	column, err := getColumnName(obj)
 	if err != nil {
 		return 0, err
@@ -145,9 +156,108 @@ func (th *TableHelper) AddObject(obj interface{}) (int64, error) {
 	return rs.LastInsertId()
 }
 
-func (th *TableHelper) AddObjects(data []map[string]interface{}) (int64, error) {
+func (th *TableHelper) AddObject(obj interface{}) (int64, error) {
+	return th._addObject(obj, "add");
+}
 
-	return 0, nil
+func (th *TableHelper) ReplaceObject(obj interface{}) (int64, error) {
+	return th._addObject(obj, "replace");
+}
+
+func (th *TableHelper) AddObjectNx(obj interface{}) (int64, error) {
+	return th._addObject(obj, "addNx");
+}
+
+func (th *TableHelper) _addObjects(objs []interface{}, act string) (int64, error)  {
+	if len(objs) <= 0 {
+		return 0, nil
+	}
+
+	sql := ""
+	if act == "replace" {
+		sql += "replace into "
+	} else if act == "addNx" {
+		sql += "insert ignore into "
+	} else {
+		sql += "insert into "
+	}
+
+	sql += th.TableName + " ("
+	column, err := getColumnName(objs[0])
+	if err != nil {
+		return 0, err
+	}
+	sql += column + ") values "
+
+	for i := 0; i < len(objs); i++ {
+		if i > 0 {
+			sql += ", "
+		}
+		values, err := getColumnValue(objs[i])
+		if err != nil {
+			return 0, err
+		}
+
+		sql += values
+	}
+	fmt.Println(sql)
+
+	rs, err := th.DB.Exec(sql)
+	if err != nil {
+		return 0, err
+	}
+
+	return rs.RowsAffected()
+}
+
+func (th *TableHelper) _addObjectsWapper(objs interface{}, act string) (int64, error) {
+	datas := make([][]interface{}, 0)
+	r := reflect.ValueOf(objs)
+
+	if r.Kind() == reflect.Ptr {
+		r = r.Elem()
+	}
+
+	if r.Kind() != reflect.Slice && r.Kind() != reflect.Array {
+		return 0, errors.New("data type must be slice or array")
+	}
+
+	for i := 0; i < r.Len(); i += chunkSize {
+		end := i + chunkSize
+		if end > r.Len() {
+			end = r.Len()
+		}
+
+		_tmp := make([]interface{}, 0)
+		for k := i; k < end; k++ {
+			_tmp = append(_tmp, r.Index(k).Interface())
+		}
+
+		datas = append(datas, _tmp)
+	}
+
+	var total int64
+	for i := 0; i < len(datas); i++ {
+		ra, err := th._addObjects(datas[i], act)
+		if err != nil {
+			return total, err
+		}
+		total += ra
+	}
+
+	return total, nil
+}
+
+func (th *TableHelper) AddObjects(objs interface{}) (int64, error) {
+	return th._addObjectsWapper(objs, "add")
+}
+
+func (th *TableHelper) AddObjectsNx(objs interface{}) (int64, error) {
+	return th._addObjectsWapper(objs, "addNx")
+}
+
+func (th *TableHelper) ReplaceObjects(objs interface{}) (int64, error) {
+	return th._addObjectsWapper(objs, "replace")
 }
 
 func getColumnName(obj interface{}) (string, error) {
