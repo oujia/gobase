@@ -95,3 +95,21 @@ func IsZero(v reflect.Value) bool {
 	}
 	return false
 }
+
+func ToSnake(s string) string {
+	b := make([]byte, 0, len(s)*2)
+	j := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			if i > 0 && j{
+				b = append(b, '_')
+			}
+			c += 'a' - 'A'
+		}
+		j = c != '_'
+		b = append(b, c)
+	}
+
+	return string(b[:])
+}

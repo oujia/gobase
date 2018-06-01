@@ -296,8 +296,14 @@ func getColumnName(obj interface{}) (string, error) {
 		if strings.Contains(dbTag, "ai") && IsZero(r.Field(i)) {
 			continue
 		}
+		f := dbTag
+		if f != "" {
+			f = strings.Split(f, ",")[0]
+		} else {
+			f = ToSnake(t.Field(i).Name)
+		}
 
-		column = append(column, strings.Split(dbTag, ",")[0])
+		column = append(column, f)
 	}
 
 	return strings.Join(column, ", "), nil
