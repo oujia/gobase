@@ -63,6 +63,7 @@ func (th *TableHelper) GetCol(result interface{}, where, keyword map[string]inte
 
 func (th *TableHelper) GetFoundRows() (total int64) {
 	sql := "SELECT FOUND_ROWS()"
+	fmt.Println(sql)
 	row := th.DB.QueryRow(sql)
 	row.Scan(&total)
 
@@ -217,7 +218,6 @@ func (th *TableHelper) _addObjects(objs []interface{}, act string, ch chan helpe
 }
 
 func (th *TableHelper) _addObjectsWapper(objs interface{}, act string) (int64, error) {
-	datas := make([][]interface{}, 0)
 	r := reflect.ValueOf(objs)
 
 	if r.Kind() == reflect.Ptr {
@@ -228,6 +228,8 @@ func (th *TableHelper) _addObjectsWapper(objs interface{}, act string) (int64, e
 		return 0, errors.New("data type must be slice or array")
 	}
 
+	initCap := r.Len() / chunkSize + 1
+	datas := make([][]interface{}, 0, initCap)
 	for i := 0; i < r.Len(); i += chunkSize {
 		end := i + chunkSize
 		if end > r.Len() {
@@ -241,11 +243,12 @@ func (th *TableHelper) _addObjectsWapper(objs interface{}, act string) (int64, e
 			idx++
 		}
 
-		datas = append(datas, _tmp)
+		datas = append(datas, _tmp[:])
 	}
+	datas = datas[:]
 
 	var total int64
-	errs := make([]string, 0)
+	errs := make([]string, 0, len(datas))
 	ch := make(chan helperResult)
 	defer close(ch)
 	for i := 0; i < len(datas); i++ {
@@ -262,7 +265,7 @@ func (th *TableHelper) _addObjectsWapper(objs interface{}, act string) (int64, e
 
 	var e error
 	if len(errs) > 0 {
-		e = errors.New(strings.Join(errs, "; "))
+		e = errors.New(strings.Join(errs[:], "; "))
 	} else {
 		e = nil
 	}
@@ -289,7 +292,7 @@ func getColumnName(obj interface{}) (string, error) {
 	}
 
 	t := r.Type()
-	column := make([]string, 0)
+	column := make([]string, 0, r.NumField())
 	for i := 0; i < r.NumField(); i++ {
 		dbTag := t.Field(i).Tag.Get("db")
 		// 忽略自增零值
@@ -306,7 +309,7 @@ func getColumnName(obj interface{}) (string, error) {
 		column = append(column, f)
 	}
 
-	return strings.Join(column, ", "), nil
+	return strings.Join(column[:], ", "), nil
 }
 
 func getColumnValue(obj interface{}) (string, error) {
@@ -316,7 +319,7 @@ func getColumnValue(obj interface{}) (string, error) {
 	}
 
 	t := r.Type()
-	column := make([]string, 0)
+	column := make([]string, 0, r.NumField())
 	for i := 0; i < r.NumField(); i++ {
 		dbTag := t.Field(i).Tag.Get("db")
 		// 忽略自增零值
@@ -340,7 +343,7 @@ func getColumnValue(obj interface{}) (string, error) {
 		}
 	}
 
-	return "(" + strings.Join(column, ", ") + ")", nil
+	return "(" + strings.Join(column[:], ", ") + ")", nil
 }
 
 func (th *TableHelper) buildSql(where, keyword map[string]interface{}) (string, error) {
@@ -388,7 +391,7 @@ func (th *TableHelper) buildSql(where, keyword map[string]interface{}) (string, 
 }
 
 func buildWhere(where map[string]interface{}, sep string) (string, error) {
-	sqlSlice := make([]string, 0)
+	sqlSlice := make([]string, 0, len(where))
 
 	for k, v := range where {
 		r := reflect.ValueOf(v)
@@ -433,6 +436,6 @@ func buildWhere(where map[string]interface{}, sep string) (string, error) {
 		}
 	}
 
-	return strings.Join(sqlSlice, fmt.Sprintf(" %s ", sep)), nil
+	return strings.Join(sqlSlice[:], fmt.Sprintf(" %s ", sep)), nil
 }
 
