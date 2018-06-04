@@ -334,7 +334,7 @@ func getColumnValue(obj interface{}) (string, error) {
 			reflect.Uint64, reflect.Uintptr:
 			column = append(column, fmt.Sprintf("%d", r.Field(i)))
 		case reflect.String:
-			column = append(column, fmt.Sprintf("'%s'", r.Field(i)))
+			column = append(column, fmt.Sprintf("%q", r.Field(i)))
 		case reflect.Float32, reflect.Float64:
 			column = append(column, fmt.Sprintf("%f", r.Field(i)))
 
@@ -403,7 +403,7 @@ func buildWhere(where map[string]interface{}, sep string) (string, error) {
 			reflect.Uint64, reflect.Uintptr:
 			sqlSlice = append(sqlSlice, fmt.Sprintf("%s=%d",k, v))
 		case reflect.String:
-			sqlSlice = append(sqlSlice, fmt.Sprintf("%s='%s'", k, v))
+			sqlSlice = append(sqlSlice, fmt.Sprintf("%s=%q", k, v))
 		case reflect.Float32, reflect.Float64:
 			sqlSlice = append(sqlSlice, fmt.Sprintf("%s=%f", k, v))
 		case reflect.Array, reflect.Slice:
@@ -420,7 +420,7 @@ func buildWhere(where map[string]interface{}, sep string) (string, error) {
 					reflect.Uint64, reflect.Uintptr:
 					inSql += fmt.Sprintf("%d", r.Index(i))
 				case reflect.String:
-					inSql += fmt.Sprintf("'%s'", r.Index(i))
+					inSql += fmt.Sprintf("%q", r.Index(i))
 				case reflect.Float32, reflect.Float64:
 					inSql += fmt.Sprintf("%f", r.Index(i))
 				default:
