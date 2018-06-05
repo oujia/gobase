@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/jmoiron/sqlx"
 	"reflect"
+	"strings"
 )
 
 func ExternalIP() (string, error) {
@@ -112,4 +113,45 @@ func ToSnake(s string) string {
 	}
 
 	return string(b[:])
+}
+
+func HttpBuildQuery(params map[string]interface{}) string {
+	paramSlice := make([]string, 0, len(params))
+
+	for k, v := range params {
+		r := reflect.ValueOf(v)
+
+		switch r.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16,
+			reflect.Int32, reflect.Int64, reflect.Uint,
+			reflect.Uint8, reflect.Uint16, reflect.Uint32,
+			reflect.Uint64, reflect.Uintptr:
+			paramSlice = append(paramSlice, fmt.Sprintf("%s=%d", k, v))
+		case reflect.String:
+			paramSlice = append(paramSlice, fmt.Sprintf("%s=%s", k, v))
+		case reflect.Float32, reflect.Float64:
+			paramSlice = append(paramSlice, fmt.Sprintf("%s=%f", k, v))
+		case reflect.Array, reflect.Slice:
+			arrStr := ""
+			for i := 0; i < r.Len(); i++ {
+				if i > 0 {
+					arrStr += "&"
+				}
+				switch r.Index(i).Kind() {
+				case reflect.Int, reflect.Int8, reflect.Int16,
+					reflect.Int32, reflect.Int64, reflect.Uint,
+					reflect.Uint8, reflect.Uint16, reflect.Uint32,
+					reflect.Uint64, reflect.Uintptr:
+					arrStr += fmt.Sprintf("%s[]=%d", r.Index(i))
+				case reflect.String:
+					arrStr += fmt.Sprintf("%s[]=%s", r.Index(i))
+				case reflect.Float32, reflect.Float64:
+					arrStr += fmt.Sprintf("%s[]=%f", r.Index(i))
+				}
+			}
+
+			paramSlice = append(paramSlice, arrStr)
+		}
+	}
+	return strings.Join(paramSlice[:], "&")
 }
