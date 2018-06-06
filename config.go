@@ -15,17 +15,17 @@ type DbInfo struct {
 }
 
 type RedisInfo struct {
-	Host string `json:"host"`
-	Port int `json:"port,string,omitempty"`
-	Pwd string `json:"pwd"`
-	Db int `json:"db,string,omitempty"`
-	Timeout int `json:"connect_timeout,string,omitempty"`
+	Host    string `json:"host"`
+	Port    int    `json:"port,string,omitempty"`
+	Pwd     string `json:"pwd"`
+	DB      int    `json:"db,string,omitempty"`
+	Timeout int    `json:"connect_timeout,string,omitempty"`
 }
 
 type R2mInfo struct {
 	AllKey string `json:"all_key,omitempty"`
-	Key string `json:"key"`
-	Ttl int `json:"ttl,string,omitempty"`
+	Key    string `json:"key"`
+	TTL    int    `json:"ttl,string,omitempty"`
 }
 
 type GlobalConf struct {

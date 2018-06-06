@@ -61,7 +61,7 @@ func NewRedisPool(redisInfo *RedisInfo) *redis.Pool {
 		IdleTimeout: 240 * time.Second,
 
 		Dial: func() (redis.Conn, error) {
-			c, err := redis.Dial("tcp", server)
+			c, err := redis.Dial("tcp", server, redis.DialConnectTimeout(1*time.Second))
 			if err != nil {
 				return nil, err
 			}
@@ -73,7 +73,7 @@ func NewRedisPool(redisInfo *RedisInfo) *redis.Pool {
 				}
 			}
 
-			if _, err := c.Do("SELECT", redisInfo.Db); err != nil {
+			if _, err := c.Do("SELECT", redisInfo.DB); err != nil {
 				c.Close()
 				return nil, err
 			}
@@ -101,7 +101,7 @@ func NewDbClient(dbName string, info map[string]DbInfo) (*sqlx.DB, error) {
 		dataSource = fmt.Sprintf("%s@(%s:%d)/%s?charset=utf8&parseTime=true", dbInfo.User, dbInfo.Host, dbInfo.Port, dbInfo.Name)
 	}
 
-	//fmt.Println(dataSource)
+	fmt.Println(dataSource)
 	return sqlx.Connect("mysql", dataSource)
 }
 

@@ -82,7 +82,8 @@ func (r *R2M) getMD5Key(where map[string]interface{}, prefix string, keyword map
 func getKeyItem(key string, value interface{}) string {
 	r := reflect.ValueOf(value)
 	var rs string
-	if r.Kind() == reflect.Slice || r.Kind() == reflect.Array {
+	switch r.Kind() {
+	case reflect.Slice, reflect.Array:
 		var tmp string
 		for i := 0; i < r.Len() ; i++ {
 			if i > 0 {
@@ -104,8 +105,15 @@ func getKeyItem(key string, value interface{}) string {
 			tmp = fmt.Sprintf("%x", md5.Sum([]byte(tmp)))
 		}
 		rs = fmt.Sprintf("%s=%s", key, tmp)
-	} else if r.Kind() == reflect.String {
+	case reflect.String:
 		rs = fmt.Sprintf("%s=%s", key, value)
+	case reflect.Int, reflect.Int8, reflect.Int16,
+		reflect.Int32, reflect.Int64, reflect.Uint,
+		reflect.Uint8, reflect.Uint16, reflect.Uint32,
+		reflect.Uint64, reflect.Uintptr:
+		rs = fmt.Sprintf("%s=%d", key, value)
+	case reflect.Float32, reflect.Float64:
+		rs = fmt.Sprintf("%s=%f", key, value)
 	}
 
 	return rs
@@ -128,14 +136,48 @@ func (r *R2M) GetRow(item interface{}, where, keyword map[string]interface{}) er
 		cacheKey, _ = redis.String(r.Redis.Get().Do("GET", aliasCacheKey))
 	}
 
-	//data, err := r.Redis.HGetAll(cacheKey).Result()
-	//if err == redis.Nil {
-	//
-	//}
+	reply, err := redis.Values(r.Redis.Get().Do("HGETALL", cacheKey))
+	if err != nil {
+		return err
+	}
+
+	if len(reply) > 0 { //hint
+		err = redis.ScanStruct(reply, item)
+		if err != nil {
+			return err
+		}
+	} else {
+		err = r.TableHelper.GetRow(item, where, keyword)
+		if err != nil {
+			return err
+		}
+
+		err = r.setStructCache(item, cacheKey)
+		if err != nil {
+			return err
+		}
+	}
 
 	if aliasCacheKey != "" {
 
 	}
 
-	return r.TableHelper.GetRow(item, where, keyword)
+	return nil
+}
+
+func (r *R2M) setStructCache(data interface{}, cacheKey string) error {
+	conn := r.Redis.Get()
+	_, err := conn.Do("HMSET", redis.Args{}.Add(cacheKey).AddFlat(data)...)
+	if err != nil {
+		return err
+	}
+
+	if r.R2mInfo.TTL > 0 {
+		_, err := conn.Do("EXPIRE", cacheKey, r.R2mInfo.TTL)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
