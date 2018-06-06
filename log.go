@@ -9,7 +9,7 @@ import (
 	"bytes"
 	"strings"
 	"encoding/json"
-	"github.com/go-redis/redis"
+	"github.com/gomodule/redigo/redis"
 )
 
 type bodyLogWriter struct {
@@ -34,7 +34,7 @@ type DwLog struct {
 	LogKey string
 	SelfCall string
 	ModuleCall string
-	RedisClient *redis.Client
+	RedisPool *redis.Pool
 }
 
 func (l *DwLog)NewModuleLog(ctx *gin.Context, method string, toUrl string, params string,  delay float64, response string)  {
@@ -155,7 +155,7 @@ func (l *DwLog)pushLog(t string, data map[string]interface{})  {
 
 	j, err := json.Marshal(pushData)
 	if err == nil {
-		go l.RedisClient.RPush(l.LogKey, string(j))
+		go l.RedisPool.Get().Do("RPUSH", l.LogKey, string(j))
 	}
 
 }

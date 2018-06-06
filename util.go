@@ -4,7 +4,7 @@ import (
 	"net"
 	"errors"
 	"time"
-	"github.com/go-redis/redis"
+	"github.com/gomodule/redigo/redis"
 	"fmt"
 	"github.com/jmoiron/sqlx"
 	"reflect"
@@ -52,14 +52,40 @@ func FormatTime(t time.Time) string {
 	return t.Format("2006-01-02 15:04:05")
 }
 
-func NewRedisClient(redisInfo *RedisInfo) *redis.Client {
-	addr := fmt.Sprintf("%s:%d", redisInfo.Host, redisInfo.Port)
+func NewRedisPool(redisInfo *RedisInfo) *redis.Pool {
+	server := fmt.Sprintf("%s:%d", redisInfo.Host, redisInfo.Port)
 
-	return redis.NewClient(&redis.Options{
-		Addr: addr,
-		Password: redisInfo.Pwd,
-		DB: redisInfo.Db,
-	})
+	return &redis.Pool{
+
+		MaxIdle:     5,
+		IdleTimeout: 240 * time.Second,
+
+		Dial: func() (redis.Conn, error) {
+			c, err := redis.Dial("tcp", server)
+			if err != nil {
+				return nil, err
+			}
+			if len(redisInfo.Pwd) > 0 {
+				_, err := c.Do("AUTH", redisInfo.Pwd);
+				if err != nil {
+					c.Close()
+					return nil, err
+				}
+			}
+
+			if _, err := c.Do("SELECT", redisInfo.Db); err != nil {
+				c.Close()
+				return nil, err
+			}
+
+			return c, err
+		},
+
+		TestOnBorrow: func(c redis.Conn, t time.Time) error {
+			_, err := c.Do("PING")
+			return err
+		},
+	}
 }
 
 func NewDbClient(dbName string, info map[string]DbInfo) (*sqlx.DB, error) {
@@ -115,10 +141,12 @@ func ToSnake(s string) string {
 	return string(b[:])
 }
 
-func HttpBuildQuery(params map[string]interface{}) string {
-	paramSlice := make([]string, 0, len(params))
+type inFormatFunc func(k, v string) string
 
-	for k, v := range params {
+func JoinMapInterface(data map[string]interface{}, format string, sep string, f inFormatFunc, inSep string) (string, error) {
+	dataSlice := make([]string, 0, len(data))
+
+	for k, v := range data {
 		r := reflect.ValueOf(v)
 
 		switch r.Kind() {
@@ -126,32 +154,54 @@ func HttpBuildQuery(params map[string]interface{}) string {
 			reflect.Int32, reflect.Int64, reflect.Uint,
 			reflect.Uint8, reflect.Uint16, reflect.Uint32,
 			reflect.Uint64, reflect.Uintptr:
-			paramSlice = append(paramSlice, fmt.Sprintf("%s=%d", k, v))
+			dataSlice = append(dataSlice, fmt.Sprintf(format, k, fmt.Sprintf("%d", v)))
 		case reflect.String:
-			paramSlice = append(paramSlice, fmt.Sprintf("%s=%s", k, v))
+			dataSlice = append(dataSlice, fmt.Sprintf(format, k, v))
 		case reflect.Float32, reflect.Float64:
-			paramSlice = append(paramSlice, fmt.Sprintf("%s=%f", k, v))
+			dataSlice = append(dataSlice, fmt.Sprintf(format, k, fmt.Sprintf("%f", v)))
 		case reflect.Array, reflect.Slice:
-			arrStr := ""
+			inSlice := make([]string, 0, r.Len())
 			for i := 0; i < r.Len(); i++ {
-				if i > 0 {
-					arrStr += "&"
-				}
 				switch r.Index(i).Kind() {
 				case reflect.Int, reflect.Int8, reflect.Int16,
 					reflect.Int32, reflect.Int64, reflect.Uint,
 					reflect.Uint8, reflect.Uint16, reflect.Uint32,
 					reflect.Uint64, reflect.Uintptr:
-					arrStr += fmt.Sprintf("%s[]=%d", r.Index(i))
+					inSlice = append(inSlice, f(k, fmt.Sprintf("%d", r.Index(i))))
 				case reflect.String:
-					arrStr += fmt.Sprintf("%s[]=%s", r.Index(i))
+					inSlice = append(inSlice, f(k, fmt.Sprintf("%s", r.Index(i))))
 				case reflect.Float32, reflect.Float64:
-					arrStr += fmt.Sprintf("%s[]=%f", r.Index(i))
+					inSlice = append(inSlice, f(k, fmt.Sprintf("%f", r.Index(i))))
+				default:
+					return "", errors.New(fmt.Sprintf("params[key=%s] error", k))
 				}
 			}
+			if len(StringFilter(inSlice, notEmptyString)) > 0 {
+				dataSlice = append(dataSlice, strings.Join(inSlice[:], inSep))
+			}
 
-			paramSlice = append(paramSlice, arrStr)
+		default:
+			return "", errors.New(fmt.Sprintf("params[key=%s] error", k))
+		}
+
+	}
+	return strings.Join(dataSlice[:], sep), nil
+}
+
+func emptyString(str string) bool {
+	return len(str) == 0
+}
+
+func notEmptyString(str string) bool {
+	return len(str) > 0
+}
+
+func StringFilter(vs []string, f func(string) bool) []string {
+	vsf := make([]string, 0, len(vs))
+	for _, v := range vs {
+		if f(v) {
+			vsf = append(vsf, v)
 		}
 	}
-	return strings.Join(paramSlice[:], "&")
+	return vsf[:]
 }

@@ -1,16 +1,16 @@
 package gobase
 
 import (
-	"github.com/go-redis/redis"
 	"fmt"
 	"strings"
 	"reflect"
 	"crypto/md5"
+	"github.com/gomodule/redigo/redis"
 )
 
 type R2M struct {
 	*TableHelper
-	Redis *redis.Client
+	Redis *redis.Pool
 	R2mInfo
 }
 
@@ -53,9 +53,17 @@ func (r *R2M)getPreKey(where map[string]interface{}, prefix string, trimWhere bo
 
 func (r *R2M) getMD5Key(where map[string]interface{}, prefix string, keyword map[string]interface{}) string {
 	cacheKey := r.getPreKey(where, prefix, true)
-	key := HttpBuildQuery(where)
+
+	var f = func(k, v string) string {
+		return fmt.Sprintf("%s[]=%s", k, v)
+	}
+
+	key, _ := JoinMapInterface(where, "%s=%s", "&", f, "&")
 	if len(keyword) > 0 {
-		key += "&" + HttpBuildQuery(keyword)
+		strKeyword, err := JoinMapInterface(keyword, "%s=%s", "&", f, "&")
+		if err == nil {
+			key += "&" + strKeyword
+		}
 	}
 
 	if len(key) > 32 {
@@ -117,13 +125,13 @@ func (r *R2M) GetRow(item interface{}, where, keyword map[string]interface{}) er
 	var aliasCacheKey string
 	if cacheKey == "" {
 		aliasCacheKey = r.getMD5Key(where, "alias", nil)
-		cacheKey, _ = r.Redis.Get(aliasCacheKey).Result()
+		cacheKey, _ = redis.String(r.Redis.Get().Do("GET", aliasCacheKey))
 	}
 
-	data, err := r.Redis.HGetAll(cacheKey).Result()
-	if err != nil {
-
-	}
+	//data, err := r.Redis.HGetAll(cacheKey).Result()
+	//if err == redis.Nil {
+	//
+	//}
 
 	if aliasCacheKey != "" {
 
